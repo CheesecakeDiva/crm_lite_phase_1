@@ -3,6 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from crm.views import CompanyViewSet, StorageViewSet
+from authenticate.views import RegisterView
 
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -26,6 +27,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     # Авторизация по JWT
+    path('api/register/', RegisterView.as_view(), name='auth_register'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 

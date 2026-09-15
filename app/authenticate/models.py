@@ -23,6 +23,15 @@ class User(AbstractUser):
     username = models.CharField(max_length=150, unique=True)
     email = models.EmailField(verbose_name='email address', max_length=255, unique=True)
 
+    company = models.ForeignKey(
+        'crm.Company',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+        verbose_name='Компания сотрудника'
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = 'email'

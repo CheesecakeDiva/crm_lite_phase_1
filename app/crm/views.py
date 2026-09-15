@@ -1,46 +1,56 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from .models import Company, Storage
 from .serializers import CompanySerializer, StorageSerializer
+from django.db import models
 
-class IsOwnerOrReadOnly(permissions.BasePermission):
+
+class IsCompanyOwnerOrReadOnly(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.method in permissions.SAFE_METHODS:
             return True
-        return obj.owner == request.user
+
+        if hasattr(obj, 'company'):
+            return obj.company.owner == request.user
+
+        return getattr(obj, 'owner', None) == request.user
+
 
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsCompanyOwnerOrReadOnly]
 
     def get_queryset(self):
-        return Company.objects.all()
+        user = self.request.user
+        return Company.objects.filter(
+            models.Q(owner=user) | models.Q(id=user.company_id if hasattr(user, 'company_id') else None))
+
 
 class StorageViewSet(viewsets.ModelViewSet):
     queryset = Storage.objects.all()
     serializer_class = StorageSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsCompanyOwnerOrReadOnly]
 
     def get_queryset(self):
-        return Storage.objects.filter(company__owner=self.request.user)
+        user = self.request.user
+        return Storage.objects.filter(
+            models.Q(company__owner=user) |
+            models.Q(company_id=user.company_id if hasattr(user, 'company_id') else None)
+        ).distinct()
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
         try:
-            company = Company.objects.get(owner=self.request.user)
-            serializer.save(company=company)
+            company = Company.objects.get(owner=request.user)
         except Company.DoesNotExist:
-            return Response({"error": "Сначала создайте компанию."}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError(
+                {"error": "Сначала создайте компанию. Вы не являетесь владельцем какой-либо компании."})
 
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.company.owner != request.user:
-            return Response({"error": "Вы не владелец этой компании."}, status=status.HTTP_403_FORBIDDEN)
-        return super().destroy(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(company=company)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.company.owner != request.user:
-            return Response({"error": "Вы не владелец этой компании."}, status=status.HTTP_403_FORBIDDEN)
-        return super().update(request, *args, **kwargs)
 
